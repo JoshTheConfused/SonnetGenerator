@@ -8,11 +8,9 @@ import json
 
 import requests
 
-import syllables
-
 word_list = []
 word_list_json = []
-file_output = "\n"
+file_output = ""
 
 
 def make_word_list():  # creates a list of words which may safely be used to generate the words available for the poem
@@ -106,10 +104,17 @@ def make_rhyme_list(word):
 
 def safe_rhyme_word_index(rhyme_list):  # finds a rhyme that does not contain a space
     index = random.randrange(len(rhyme_list)) - 1
-    out = rhyme_list[index]
-    while " " in out['word'] or out['word'] == "":
+    # makes sure word is easy to use part of speech
+    unsafe = True
+    while unsafe:
         index = random.randrange(len(rhyme_list)) - 1
         out = rhyme_list[index]
+        try:
+            unsafe = " " in out['word'] or out['word'] == "" or "n" not in out['tags'] and "v" not in \
+                     out['tags'] and "adj" not in out['tags'] and "adv" not in out['tags'] and \
+                     'tags' not in out
+        except KeyError:
+            continue
 
     print(f"Found safe rhyme '{rhyme_list[index]}'")
     return index
@@ -120,7 +125,12 @@ def rhyme_list_safe(rhyme_list):  # ensures that the list has at least one word 
     if len(rhyme_list) == 0:
         return False
     for i in rhyme_list:
-        if " " not in i['word']:
+        try:  # verifies usable parts of speech, accounting for sometimes no data given for that
+            has_right_speech_part = "n" in i['tags'] or "v" in i['tags'] or "adj" in i['tags'] or "adv" in i['tags']
+        except KeyError:
+            continue
+
+        if " " not in i['word'] and has_right_speech_part:
             return True
     return False
 
@@ -145,6 +155,13 @@ def fill_line_grammatically(end_word):
     out = ""
     syllable_count = end_word['numSyllables']
 
+    # get the parts of speech tag from the end word
+    # noun: fill line as noun-verb-noun and then add adjectives/adverbs to fill syllables
+    # verb: fill line as noun-noun-verb and then add adjectives/adverbs to fill syllables
+    # adjective: fill line as noun-[is/was]-adjective and adjectives/adverbs to fill syllables
+    # adverb: fill line as noun-[[is/was]-adjective/verb]-adverb and add adjectives/adverbs to fill syllables
+    # all (at the end or in each section): correct noun and verb pluralization
+
     out += end_word['word']
     return out
 
@@ -161,6 +178,8 @@ def write_line_input(given_word, use_word_passed):
         end_word = ""
         # checks rhyme safety two layers deep
         while len(layer_two_rhyme_list) <= 1 and not rhyme_list_safe(layer_two_rhyme_list):
+            word = word_list_json[random.randrange(len(word_list_json)) - 1]["word"]
+            rhyme_list = make_rhyme_list(word)
             while len(rhyme_list) <= 1 and not rhyme_list_safe(rhyme_list):
                 word = word_list_json[random.randrange(len(word_list_json)) - 1]["word"]
                 rhyme_list = make_rhyme_list(word)
@@ -185,17 +204,8 @@ def write_line_input(given_word, use_word_passed):
 
     total_syl += rhyme_list[end_word_index]['numSyllables']
 
-    out = ""
+    out = fill_line_grammatically(rhyme_list[end_word_index])
 
-    # fills rest of the line with random words up to 10 syllables
-    while total_syl < 10:
-        new_word = word_list_json[random.randrange(len(word_list_json)) - 1]["word"]
-        new_word_syl = syllables.estimate(new_word)
-        if new_word_syl + total_syl <= 10:
-            out = out + " " + new_word
-            total_syl += new_word_syl
-
-    out = out + " " + end_word
     print(f"Finished creating new line: {out}")
     global file_output
     file_output = file_output + out + "\n"
@@ -220,10 +230,12 @@ def main(iterations):
             file_output = file_output + "\n"
         rhyme_one = write_line()
         write_line_input(rhyme_one, True)
+        file_output = "\n" + file_output
         sonnet_list.append(file_output)
         file_output = ""
         with open(f'sonnet_out_#{k}.txt', 'w') as Writer:
-            Writer.write(f"Sonnet #{k} \n")
+            Writer.write(f"Sonnet #{k}")
+            Writer.write("\n")
             Writer.write(sonnet_list[k])
 
 
